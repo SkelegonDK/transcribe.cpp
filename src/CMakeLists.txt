@@ -60,6 +60,10 @@ add_library(transcribe
     arch/qwen3_asr/weights.cpp
     arch/qwen3_asr/encoder.cpp
     arch/qwen3_asr/decoder.cpp
+    arch/whisper_qwen/model.cpp
+    arch/whisper_qwen/capabilities.cpp
+    arch/whisper_qwen/weights.cpp
+    arch/whisper_qwen/graph.cpp
     arch/moss/model.cpp
     arch/moss/capabilities.cpp
     arch/moss/diarize.cpp
