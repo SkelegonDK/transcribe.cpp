@@ -437,6 +437,14 @@ transcribe_status build_cohere_weights(ggml_context * ctx_meta, const CohereHPar
 
     // ----- head -----
     GET_F32(weights.head.bias, "head.bias", vocab_size);
+    if (!hp.head_tied_weights) {
+        // Untied fine-tunes (e.g. syvai/hviske) project with their own head.
+        GET_LIN(weights.head.weight, "head.weight", dec_h, vocab_size);
+    } else if (ggml_get_tensor(ctx_meta, "head.weight") != nullptr) {
+        log_msg(TRANSCRIBE_LOG_LEVEL_ERROR,
+                "cohere: head.weight present but stt.cohere.head.tied_weights is true");
+        return TRANSCRIBE_ERR_GGUF;
+    }
 
     return TRANSCRIBE_OK;
 }
@@ -444,5 +452,9 @@ transcribe_status build_cohere_weights(ggml_context * ctx_meta, const CohereHPar
 #undef GET_F32
 #undef GET_CONV
 #undef GET_LIN
+
+ggml_tensor * cohere_head_weight(const CohereWeights & w) {
+    return w.head.weight != nullptr ? w.head.weight : w.dec_embed.token_w;
+}
 
 }  // namespace transcribe::cohere

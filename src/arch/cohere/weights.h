@@ -212,10 +212,16 @@ struct CohereDecFinal {
     ggml_tensor * norm_b = nullptr;
 };
 
-// Head (bias only; weight is tied to dec_embed.token_w).
+// Head. The weight is normally tied to dec_embed.token_w; checkpoints whose
+// fine-tune untied it (stt.cohere.head.tied_weights = false) carry their own
+// head.weight. Use cohere_head_weight() rather than either field directly.
 struct CohereHead {
-    ggml_tensor * bias = nullptr;  // [vocab_size]
+    ggml_tensor * weight = nullptr;  // [dec_hidden, vocab_size]; null when tied
+    ggml_tensor * bias   = nullptr;  // [vocab_size]
 };
+
+struct CohereWeights;
+ggml_tensor * cohere_head_weight(const CohereWeights & w);
 
 struct CohereWeights {
     CoherePreEncode             pre_encode;

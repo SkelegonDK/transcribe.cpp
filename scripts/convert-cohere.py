@@ -460,10 +460,20 @@ def convert(model_dir: Path, out_path: Path, repo_id: str | None = None) -> None
             total_params += t.numel()
         # Subtract tied weight (counted twice in safetensors).
         tied_key = "log_softmax.mlp.layer0.weight"
-        if tied_key in st_keys:
+        if tied_key in st_keys and torch.equal(
+            st.get_tensor(tied_key),
+            st.get_tensor("transf_decoder._embedding.token_embedding.weight"),
+        ):
             total_params -= st.get_tensor(tied_key).numel()
         size_label = _compute_size_label(total_params)
         print(f"Total params (deduplicated): {total_params:,} -> size_label={size_label}")
+
+        # The classifier head is tied to the token embedding in the upstream
+        # checkpoints, but fine-tunes may have untied it (syvai/hviske-v5.3
+        # differs by up to 0.17). Only an exact match may share one tensor.
+        head_src, embed_src = "log_softmax.mlp.layer0.weight", "transf_decoder._embedding.token_embedding.weight"
+        head_tied = head_src not in st_keys or torch.equal(st.get_tensor(head_src), st.get_tensor(embed_src))
+        print(f"Head weight tied to token embedding: {head_tied}")
 
         print(f"Writing GGUF to {out_path}")
         writer = gguf_writer(str(out_path), "cohere_asr")
@@ -524,7 +534,7 @@ def convert(model_dir: Path, out_path: Path, repo_id: str | None = None) -> None
 
         writer.add_uint32("stt.cohere.decoder_start_token_id", hp["decoder_start_token_id"])
         writer.add_bool  ("stt.cohere.head.log_softmax",       hp["head_log_softmax"])
-        writer.add_bool  ("stt.cohere.head.tied_weights",      True)
+        writer.add_bool  ("stt.cohere.head.tied_weights",      head_tied)
 
         # ----- stt.frontend.* -----
         writer.add_string ("stt.frontend.type",          hp["fe_type"])
@@ -608,6 +618,8 @@ def convert(model_dir: Path, out_path: Path, repo_id: str | None = None) -> None
         # head bias (1 tensor — weight is tied to dec.embed.token.weight)
         for src_name, gguf_name, transform in HEAD_TABLE:
             add(src_name, gguf_name, transform)
+        if not head_tied:
+            add(head_src, "head.weight", passthrough)
 
         # Mel frontend buffers (filterbank + window) — always stored as f32.
         # These are the exact values the model was trained with; using them
@@ -645,6 +657,7 @@ def convert(model_dir: Path, out_path: Path, repo_id: str | None = None) -> None
             + hp["dec_n_layers"] * len(DECODER_BLOCK_TABLE)    # 8 * 26 = 208
             + len(DEC_FINAL_NORM_TABLE)                        # 2
             + len(HEAD_TABLE)                                  # 1
+            + (0 if head_tied else 1)                          # untied head.weight
             + 2                                                # frontend fb + window
         )
         if n_added != expected:
